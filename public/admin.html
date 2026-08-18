@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZombieCoder — Admin Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128;
+      --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+      --blue: #58a6ff; --green: #3fb950; --red: #f85149;
+      --orange: #d29922; --purple: #bc8cff;
+      --sidebar-w: 220px; --header-h: 52px; --radius: 8px;
+    }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Bengali', sans-serif;
+      background: var(--bg); color: var(--text); overflow: hidden;
+    }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .sidebar {
+      position: fixed; top: 0; left: 0; width: var(--sidebar-w); height: 100%;
+      background: var(--bg2); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-brand {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-brand h1 { font-size: 15px; font-weight: 700; color: var(--blue); }
+    .sidebar-brand small { font-size: 10px; color: var(--text2); }
+    .sidebar-nav { flex: 1; overflow-y: auto; padding: 6px 0; }
+    .nav-item {
+      display: flex; align-items: center; gap: 8px; padding: 9px 16px;
+      cursor: pointer; color: var(--text2); font-size: 13px;
+      border-left: 3px solid transparent; transition: all 0.15s;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.active { background: var(--bg3); color: var(--text); border-left-color: var(--blue); }
+    .nav-item .badge {
+      margin-left: auto; background: var(--bg3); padding: 1px 7px;
+      border-radius: 10px; font-size: 10px; color: var(--text2);
+    }
+    .sidebar-footer {
+      padding: 10px 16px; border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--text2);
+    }
+    .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+    .main { margin-left: var(--sidebar-w); height: 100vh; display: flex; flex-direction: column; }
+    .header {
+      height: var(--header-h); display: flex; align-items: center;
+      padding: 0 20px; border-bottom: 1px solid var(--border);
+      background: var(--bg2); gap: 10px; flex-shrink: 0;
+    }
+    .header h2 { font-size: 15px; font-weight: 600; flex: 1; }
+    .header select, .header input {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+      padding: 4px 10px; border-radius: 4px; font-size: 12px;
+    }
+    .refresh-btn {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
+      padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    .refresh-btn:hover { background: var(--border); color: var(--text); }
+
+    .content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .stat-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; text-align: center;
+    }
+    .stat-card .stat-value { font-size: 24px; font-weight: 700; }
+    .stat-card .stat-label { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .card-header h3 { font-size: 13px; font-weight: 600; }
+    .card-body { padding: 14px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 600; }
+    tr:hover td { background: var(--bg3); }
+
+    .tag {
+      display: inline-block; padding: 1px 7px; border-radius: 10px;
+      font-size: 10px; font-weight: 500;
+    }
+    .tag-green { background: #0a4a1a; color: var(--green); }
+    .tag-blue { background: #0a284a; color: var(--blue); }
+    .tag-red { background: #4a0a1a; color: var(--red); }
+    .tag-orange { background: #4a3a0a; color: var(--orange); }
+
+    .chat-container {
+      display: flex; flex-direction: column;
+      height: calc(100vh - var(--header-h) - 32px);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg2);
+    }
+    .chat-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .chat-header select {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+      padding: 4px 8px; border-radius: 4px; font-size: 12px;
+    }
+    .chat-header .chat-status { font-size: 11px; color: var(--text2); margin-left: auto; }
+    .chat-messages {
+      flex: 1; overflow-y: auto; padding: 14px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .chat-msg {
+      max-width: 82%; padding: 9px 12px; border-radius: 10px;
+      font-size: 13px; line-height: 1.5; word-wrap: break-word;
+    }
+    .chat-msg.user {
+      align-self: flex-end; background: var(--blue); color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+    .chat-msg.agent {
+      align-self: flex-start; background: var(--bg3); color: var(--text);
+      border-bottom-left-radius: 3px;
+    }
+    .chat-msg .msg-sender { font-size: 10px; font-weight: 600; margin-bottom: 3px; color: var(--text2); }
+    .chat-msg.user .msg-sender { color: rgba(255,255,255,0.7); }
+    .chat-msg .msg-time { font-size: 9px; color: var(--text2); margin-top: 3px; text-align: right; }
+    .chat-msg.typing { align-self: flex-start; background: var(--bg3); color: var(--text2); font-style: italic; }
+    .chat-msg code {
+      background: rgba(0,0,0,0.3); padding: 1px 4px; border-radius: 3px; font-size: 12px;
+    }
+    .chat-msg pre {
+      background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px;
+      overflow-x: auto; font-size: 12px; margin: 4px 0;
+    }
+    .chat-input-area {
+      display: flex; gap: 8px; padding: 10px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input-area input {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 12px; border-radius: 6px;
+      font-size: 13px; outline: none;
+    }
+    .chat-input-area input:focus { border-color: var(--blue); }
+    .chat-input-area button {
+      background: var(--blue); border: none; color: #fff;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer;
+      font-weight: 600; font-size: 13px;
+    }
+    .chat-input-area button:hover { opacity: 0.85; }
+    .chat-input-area button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .loading { text-align: center; padding: 30px; color: var(--text2); }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+      .stats-grid { grid-template-columns: repeat(2,1fr); }
+      .chat-msg { max-width: 95%; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>🧟 ZombieCoder</h1>
+      <small>Admin Panel v1.0</small>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-page="chat" onclick="switchPage('chat')"><span>💬</span> Chat</div>
+      <div class="nav-item" data-page="models" onclick="switchPage('models')"><span>📦</span> Models</div>
+      <div class="nav-item" data-page="memory" onclick="switchPage('memory')"><span>💾</span> Memory</div>
+      <div class="nav-item" data-page="identity" onclick="switchPage('identity')"><span>🔐</span> Identity</div>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="live-dot"></span> <span id="serverStatus">connecting...</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="header">
+      <h2 id="pageTitle">📊 Dashboard</h2>
+      <div class="header-actions">
+        <button class="refresh-btn" onclick="refreshCurrentPage()">⟳ Refresh</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ═══ DASHBOARD ═══ -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats-grid" id="dashStats">
+          <div class="stat-card"><div class="stat-value" id="statUptime">—</div><div class="stat-label">⏱ Uptime</div></div>
+          <div class="stat-card"><div class="stat-value" id="statModels">—</div><div class="stat-label">📦 Models</div></div>
+          <div class="stat-card"><div class="stat-value" id="statSessions">—</div><div class="stat-label">💾 Sessions</div></div>
+          <div class="stat-card"><div class="stat-value" id="statMessages">—</div><div class="stat-label">💬 Messages</div></div>
+          <div class="stat-card"><div class="stat-value" id="statRequests">—</div><div class="stat-label">📊 Requests</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>🔐 System Identity</h3></div>
+          <div class="card-body" id="dashIdentity"><div class="loading">Loading...</div></div>
+        </div>
+      </div>
+
+      <!-- ═══ CHAT ═══ -->
+      <div class="page" id="page-chat">
+        <div class="chat-container">
+          <div class="chat-header">
+            <span style="font-weight:600;font-size:13px;">💬 Chat</span>
+            <select id="chatModel" style="min-width:160px">
+              <option value="">— Select Model —</option>
+            </select>
+            <select id="chatSessionSelect" onchange="loadChatSession(this.value)" style="min-width:140px">
+              <option value="">📁 New Chat</option>
+            </select>
+            <span class="chat-status" id="chatStatus">ready</span>
+            <button class="refresh-btn" onclick="clearChatHistory()" title="Clear">🗑</button>
+          </div>
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg agent">
+              <div class="msg-sender">🤖 ZombieCoder</div>
+              নমস্কার! আমি ZombieCoder AI। মডেল সিলেক্ট করে মেসেজ লিখুন। 😊
+              <div class="msg-time">just now</div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="মেসেজ লিখুন..." onkeydown="if(event.key==='Enter')sendChat()">
+            <button id="chatSendBtn" onclick="sendChat()">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ MODELS ═══ -->
+      <div class="page" id="page-models">
+        <div class="card">
+          <div class="card-header"><h3>📦 Available Models</h3></div>
+          <div class="card-body">
+            <table><thead><tr><th>#</th><th>Model ID</th><th>Name</th><th>Type</th><th>Provider</th></tr></thead><tbody id="modelTable"><tr><td colspan="5"><div class="loading">Loading...</div></td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ MEMORY ═══ -->
+      <div class="page" id="page-memory">
+        <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div class="stat-card"><div class="stat-value" id="memSessions">—</div><div class="stat-label">💾 Sessions</div></div>
+          <div class="stat-card"><div class="stat-value" id="memMessages">—</div><div class="stat-label">💬 Messages</div></div>
+          <div class="stat-card"><div class="stat-value" id="memPath">—</div><div class="stat-label">📁 Path</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>📋 Conversation Sessions</h3>
+            <button class="refresh-btn" onclick="loadMemorySessions()">⟳ Refresh</button>
+          </div>
+          <div class="card-body">
+            <table><thead><tr><th>Session ID</th><th>Messages</th><th>Preview</th><th>Updated</th><th></th></tr></thead><tbody id="sessionTable"><tr><td colspan="5"><div class="loading">Loading...</div></td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ IDENTITY ═══ -->
+      <div class="page" id="page-identity">
+        <div class="card">
+          <div class="card-header"><h3>🔐 System Sovereignty & Identity</h3></div>
+          <div class="card-body" id="identityBody"><div class="loading">Loading...</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════
+    //  STATE
+    // ═══════════════════════════════════════════════
+    const API = '';
+    let currentPage = 'dashboard';
+    let chatBusy = false;
+    let currentSessionId = 'session_' + Date.now();
+    let chatHistory = [];
+
+    // ═══════════════════════════════════════════════
+    //  SIDEBAR
+    // ═══════════════════════════════════════════════
+    function switchPage(page) {
+      currentPage = page;
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelector('.nav-item[data-page="' + page + '"]').classList.add('active');
+      document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      const titles = { dashboard:'📊 Dashboard', chat:'💬 Chat', models:'📦 Models', memory:'💾 Memory', identity:'🔐 Identity' };
+      document.getElementById('pageTitle').textContent = titles[page] || page;
+      if (page === 'dashboard') loadDashboard();
+      else if (page === 'models') loadModels();
+      else if (page === 'memory') loadMemorySessions();
+      else if (page === 'identity') loadIdentity();
+      else if (page === 'chat') loadChatModels();
+    }
+
+    function refreshCurrentPage() { switchPage(currentPage); }
+
+    // ═══════════════════════════════════════════════
+    //  API HELPERS
+    // ═══════════════════════════════════════════════
+    async function apiFetch(path) {
+      try {
+        const r = await fetch(API + path);
+        if (!r.ok) return { error: 'HTTP ' + r.status };
+        return await r.json();
+      } catch(e) { return { error: e.message }; }
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString('bn-BD', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    }
+
+    function fmtUptime(sec) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return h + 'h ' + m + 'm ' + s + 's';
+    }
+
+    function ago(ts) {
+      if (!ts) return '—';
+      const diff = Date.now() - new Date(ts).getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      return Math.floor(m / 60) + 'h ago';
+    }
+
+    // ═══════════════════════════════════════════════
+    //  DASHBOARD
+    // ═══════════════════════════════════════════════
+    async function loadDashboard() {
+      const [health, identityData] = await Promise.all([apiFetch('/health'), apiFetch('/identity')]);
+
+      document.getElementById('statUptime').textContent = fmtUptime(health.uptime || 0);
+      document.getElementById('statModels').textContent = health.stats?.endpoints ? Object.keys(health.stats.endpoints).length : '—';
+      document.getElementById('statSessions').textContent = health.memory?.totalSessions || 0;
+      document.getElementById('statMessages').textContent = health.memory?.totalMessages || 0;
+      document.getElementById('statRequests').textContent = health.stats?.totalRequests || 0;
+      document.getElementById('serverStatus').textContent = fmtUptime(health.uptime || 0) + ' up';
+
+      const id = identityData.identity || {};
+      document.getElementById('dashIdentity').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+          <div><strong>System:</strong> ${id.name || '—'} v${id.version || '—'}</div>
+          <div><strong>Owner:</strong> ${id.owner || '—'}</div>
+          <div><strong>Organization:</strong> ${id.organization || '—'}</div>
+          <div><strong>Location:</strong> ${id.location || '—'}</div>
+          <div><strong>License:</strong> ${id.license || '—'}</div>
+          <div><strong>Tagline:</strong> <em>${id.tagline || '—'}</em></div>
+          <div style="grid-column:1/-1"><strong>Identity Hash:</strong> <code>${(id.identityHash || '').slice(0, 20)}...</code></div>
+        </div>
+      `;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  MODELS
+    // ═══════════════════════════════════════════════
+    async function loadModels() {
+      const data = await apiFetch('/api/models');
+      const models = data.data || [];
+      document.getElementById('modelTable').innerHTML = models.length
+        ? models.map((m, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td><code>${m.id}</code></td>
+            <td>${m.name || m.id}</td>
+            <td><span class="tag tag-blue">${m.type || 'chat'}</span></td>
+            <td>${m.provider || '—'}</td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="5" style="text-align:center;color:var(--text2)">No models</td></tr>';
+
+      // Also populate chat model dropdown
+      const sel = document.getElementById('chatModel');
+      sel.innerHTML = '<option value="">— Select Model —</option>';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name + ' (' + m.id + ')';
+        sel.appendChild(opt);
+      });
+    }
+
+    function loadChatModels() {
+      if (document.getElementById('chatModel').options.length <= 1) loadModels();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  IDENTITY
+    // ═══════════════════════════════════════════════
+    async function loadIdentity() {
+      const data = await apiFetch('/identity');
+      const id = data.identity || {};
+      const integ = data.integrity || {};
+      document.getElementById('identityBody').innerHTML = `
+        <div style="display:grid;gap:10px;font-size:13px">
+          <div><strong>System:</strong> ${id.name || '—'} v${id.version || '—'}</div>
+          <div><strong>Tagline:</strong> <em>"${id.tagline || '—'}"</em></div>
+          <div><strong>Owner:</strong> ${id.owner || '—'}</div>
+          <div><strong>Organization:</strong> ${id.organization || '—'}</div>
+          <div><strong>Location:</strong> ${id.location || '—'}</div>
+          <div><strong>Website:</strong> <a href="${id.website || '#'}" target="_blank">${id.website || '—'}</a></div>
+          <div><strong>License:</strong> ${id.license || '—'}</div>
+          <hr style="border-color:var(--border);margin:6px 0">
+          <div><strong>Identity Hash:</strong> <code style="word-break:break-all">${id.identityHash || '—'}</code></div>
+          <div><strong>Integrity Valid:</strong> ${integ.valid ? '<span style="color:var(--green)">✅ YES</span>' : '<span style="color:var(--red)">❌ NO</span>'}</div>
+          <div><strong>Timestamp:</strong> ${data.timestamp || '—'}</div>
+        </div>
+      `;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  MEMORY SESSIONS
+    // ═══════════════════════════════════════════════
+    async function loadMemorySessions() {
+      const [statsData, sessionsData] = await Promise.all([
+        apiFetch('/api/memory'),
+        apiFetch('/api/sessions')
+      ]);
+
+      document.getElementById('memSessions').textContent = statsData.totalSessions || 0;
+      document.getElementById('memMessages').textContent = statsData.totalMessages || 0;
+      document.getElementById('memPath').textContent = (statsData.memoryPath || 'memory/').replace('/home/sahon/dev/Ustad/', '');
+
+      const sessions = sessionsData.sessions || [];
+      document.getElementById('sessionTable').innerHTML = sessions.length
+        ? sessions.map(s => `
+          <tr>
+            <td><code>${(s.id || '').slice(0, 16)}...</code></td>
+            <td><strong>${s.messageCount || 0}</strong></td>
+            <td style="font-size:11px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.preview || '').slice(0, 50)}</td>
+            <td style="font-size:11px;color:var(--text2)">${s.updatedAt ? ago(s.updatedAt) : '—'}</td>
+            <td><button class="refresh-btn" onclick="deleteSession('${s.id}')" style="color:var(--red)">🗑</button></td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="5" style="text-align:center;color:var(--text2)">No sessions yet</td></tr>';
+
+      // Update chat session dropdown
+      const sel = document.getElementById('chatSessionSelect');
+      const currentVal = sel.value;
+      sel.innerHTML = '<option value="">📁 New Chat</option>';
+      sessions.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = (s.preview || s.id).slice(0, 30) + ' — ' + (s.messageCount || 0) + ' msgs';
+        sel.appendChild(opt);
+      });
+      if (currentVal && [...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
+    }
+
+    async function deleteSession(id) {
+      await fetch(API + '/api/sessions/' + id, { method: 'DELETE' });
+      loadMemorySessions();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  CHAT
+    // ═══════════════════════════════════════════════
+    function addChatMessage(type, text, sender) {
+      const container = document.getElementById('chatMessages');
+      const el = document.createElement('div');
+      el.className = 'chat-msg ' + type;
+      const now = new Date();
+      el.innerHTML = '<div class="msg-sender">' + sender + '</div>' +
+        text.replace(/\n/g, '<br>').replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>').replace(/`([^`]+)`/g, '<code>$1</code>') +
+        '<div class="msg-time">' + fmtTime(now) + '</div>';
+      container.appendChild(el);
+      container.scrollTop = container.scrollHeight;
+      return el;
+    }
+
+    function updateStreamingMsg(el, text) {
+      const textEl = el.querySelector('.message-text') || el;
+      // Find the text portion (after msg-sender div)
+      const msgText = el.querySelector('.msg-time');
+      if (msgText) {
+        // Rebuild inner HTML preserving sender and time
+        const senderEl = el.querySelector('.msg-sender');
+        const senderHTML = senderEl ? senderEl.outerHTML : '';
+        const timeHTML = msgText.outerHTML;
+        el.innerHTML = senderHTML +
+          '<div class="message-text">' +
+          text.replace(/\n/g, '<br>').replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>').replace(/`([^`]+)`/g, '<code>$1</code>') +
+          '</div>' + timeHTML;
+      }
+      const container = document.getElementById('chatMessages');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg || chatBusy) return;
+
+      const model = document.getElementById('chatModel').value;
+      if (!model) {
+        addChatMessage('agent', '⚠️ দয়া করে একটি মডেল সিলেক্ট করুন!', '🤖 System');
+        return;
+      }
+
+      addChatMessage('user', msg, 'আপনি');
+      input.value = '';
+
+      chatBusy = true;
+      document.getElementById('chatSendBtn').disabled = true;
+      document.getElementById('chatStatus').textContent = '⏳ thinking...';
+
+      const typingEl = document.createElement('div');
+      typingEl.className = 'chat-msg typing';
+      typingEl.id = 'chatTyping';
+      typingEl.textContent = '🤖 ' + model + ' thinking...';
+      document.getElementById('chatMessages').appendChild(typingEl);
+      document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+
+      try {
+        const r = await fetch(API + '/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: model,
+            messages: [...chatHistory, { role: 'user', content: msg }],
+            sessionId: currentSessionId,
+            stream: true
+          })
+        });
+
+        const typing = document.getElementById('chatTyping');
+        if (typing) typing.remove();
+
+        // Check if streaming response
+        if (r.headers.get('content-type')?.includes('text/event-stream')) {
+          // Streaming mode
+          const reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let responseText = '';
+          let responseEl = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+                try {
+                  const parsed = JSON.parse(data);
+                  const delta = parsed.choices?.[0]?.delta?.content || '';
+                  if (delta) {
+                    responseText += delta;
+                    if (!responseEl) {
+                      responseEl = addChatMessage('agent', responseText, '🤖 ' + model);
+                    } else {
+                      updateStreamingMsg(responseEl, responseText);
+                    }
+                  }
+                } catch(e) {}
+              }
+            }
+          }
+
+          if (responseText) {
+            chatHistory.push({ role: 'user', content: msg });
+            chatHistory.push({ role: 'assistant', content: responseText });
+          } else {
+            addChatMessage('agent', 'Empty response from model', 'System');
+          }
+        } else {
+          // Non-streaming fallback
+          const result = await r.json();
+          let responseText = '';
+          if (result.error) {
+            responseText = 'Error: ' + (result.error.message || JSON.stringify(result.error));
+            addChatMessage('agent', responseText, 'System');
+          } else if (result.choices && result.choices[0]) {
+            responseText = result.choices[0].message?.content || 'No response';
+            addChatMessage('agent', responseText, '🤖 ' + model);
+            chatHistory.push({ role: 'user', content: msg });
+            chatHistory.push({ role: 'assistant', content: responseText });
+          } else {
+            responseText = JSON.stringify(result, null, 2).slice(0, 500);
+            addChatMessage('agent', 'Response:\n' + responseText, '🤖 System');
+          }
+        }
+
+        // Update session dropdown
+        loadMemorySessions();
+      } catch(e) {
+        const typing = document.getElementById('chatTyping');
+        if (typing) typing.remove();
+        addChatMessage('agent', '❌ Connection error: ' + e.message, 'System');
+      }
+
+      chatBusy = false;
+      document.getElementById('chatSendBtn').disabled = false;
+      document.getElementById('chatStatus').textContent = 'ready';
+    }
+
+    function loadChatSession(sessionId) {
+      if (!sessionId) {
+        currentSessionId = 'session_' + Date.now();
+        chatHistory = [];
+        document.getElementById('chatMessages').innerHTML =
+          '<div class="chat-msg agent"><div class="msg-sender">🤖 ZombieCoder</div>নতুন কথা শুরু করুন! 😊<div class="msg-time">just now</div></div>';
+        return;
+      }
+      currentSessionId = sessionId;
+      fetch(API + '/api/sessions/' + sessionId).then(r => r.json()).then(session => {
+        if (!session || !session.messages) return;
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = '';
+        chatHistory = [];
+        session.messages.forEach(m => {
+          const type = m.role === 'user' ? 'user' : 'agent';
+          const sender = m.role === 'user' ? 'আপনি' : '🤖 ' + (m.model || 'AI');
+          addChatMessage(type, m.content || '', sender);
+          chatHistory.push({ role: m.role, content: m.content });
+        });
+      });
+    }
+
+    function clearChatHistory() {
+      if (!confirm('সব চ্যাট হিস্টোরি ডিলিট করবেন?')) return;
+      currentSessionId = 'session_' + Date.now();
+      chatHistory = [];
+      document.getElementById('chatMessages').innerHTML =
+        '<div class="chat-msg agent"><div class="msg-sender">🤖 ZombieCoder</div>হিস্টোরি ক্লিয়ার! নতুন কথা শুরু করুন।<div class="msg-time">just now</div></div>';
+    }
+
+    // ═══════════════════════════════════════════════
+    //  INIT
+    // ═══════════════════════════════════════════════
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDashboard();
+      loadModels();
+      loadMemorySessions();
+      loadIdentity();
+    });
+  </script>
+</body>
+</html>
