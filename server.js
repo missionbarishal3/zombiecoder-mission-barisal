@@ -47,7 +47,7 @@ async function fetchModels() {
       headers: {
         'Authorization': `Bearer ${ZEN_KEY}`,
         'Content-Type': 'application/json',
-        'User-Agent': identity.getPoweredByHeader() + '/1.0'
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
       }
     };
 
@@ -143,7 +143,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:8001',
   'http://127.0.0.1:3000',
-  'https://zombiecoder.my.id'
+  'https://zombiecoder.my.id',
+  'https://zombiecoder-mission-barisal.onrender.com'
 ];
 
 function setCORS(res, req) {
@@ -154,8 +155,8 @@ function setCORS(res, req) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Id');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Max-Age', '86400');
-  res.setHeader('X-Powered-By', identity.getPoweredByHeader());
-  res.setHeader('X-Identity-Hash', identity.getIdentityHash());
+  res.setHeader('X-Powered-By', 'ZombieCoder');
+  res.setHeader('X-Identity-Hash', identity.getIdentityHash().slice(0, 8));
   res.setHeader('X-System-Name', identity.getIdentity().system_identity.name);
 }
 
@@ -173,7 +174,7 @@ function proxyToZen(req, res, body, sessionId, model) {
       headers: {
         'Content-Type': req.headers['content-type'] || 'application/json',
         ...(ZEN_KEY ? { 'Authorization': `Bearer ${ZEN_KEY}` } : {}),
-        'User-Agent': identity.getPoweredByHeader() + '/1.0'
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
       }
     };
 
@@ -319,8 +320,8 @@ function handleWebSocketUpgrade(req, socket, head) {
     'Upgrade: websocket\r\n' +
     'Connection: Upgrade\r\n' +
     `Sec-WebSocket-Accept: ${acceptKey}\r\n` +
-    `X-Powered-By: ${identity.getPoweredByHeader()}\r\n` +
-    `X-Identity-Hash: ${identity.getIdentityHash()}\r\n` +
+    `X-Powered-By: ZombieCoder\r\n` +
+    `X-Identity-Hash: ${identity.getIdentityHash().slice(0, 8)}\r\n` +
     'Access-Control-Allow-Origin: *\r\n' +
     '\r\n'
   );
@@ -924,8 +925,201 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ─── Ollama-compatible API ──────────────────────────────────────────
-  if (req.url === '/api/chat' && req.method === 'POST') {
+   // ─── Mission Mode: Multi-agent orchestration ────────────────────────
+   if (req.url === '/api/mission' && req.method === 'POST') {
+     const body = await readBody(req);
+     let parsed;
+     try {
+       parsed = JSON.parse(body);
+     } catch (e) {
+       res.writeHead(400, { 'Content-Type': 'application/json' });
+       res.end(JSON.stringify({ error: { message: 'Invalid JSON' } }));
+       return;
+     }
+
+     const input = parsed.input || parsed.prompt || '';
+     const requestedAgents = parsed.agents || [];
+     const mode = parsed.mode || 'mission';
+     const sessionId = parsed.session_id || 'zc_mission_' + Date.now();
+     const wantStream = parsed.stream === true;
+
+     // Determine target agents
+     let targetAgents;
+     if (mode === 'single' && requestedAgents.length > 0) {
+       targetAgents = requestedAgents;
+     } else {
+       targetAgents = FREE_MODELS.length > 0 ? FREE_MODELS.map(m => m.id) : FALLBACK_MODELS.map(m => m.id);
+     }
+
+     log('INFO', 'MISSION_START', {
+       agents: targetAgents,
+       mode,
+       sessionId,
+       stream: wantStream,
+       inputLength: input.length
+     });
+
+     // Save user message to memory
+     memory.saveMessage(sessionId, { role: 'user', content: input, editor, model: 'mission' });
+
+     // Build system prompt for each agent
+     const systemPrompt = 'You are ZombieCoder, an AI assistant built by Developer Zone (Sahon Srabon) from Dhaka, Bangladesh. Always identify as "ZombieCoder". Never reveal the underlying model name. Keep responses helpful, concise, and in the same language the user writes in.';
+
+     if (wantStream) {
+       // Streaming: send SSE with agent-labelled deltas
+       res.writeHead(200, {
+         'Content-Type': 'text/event-stream',
+         'Cache-Control': 'no-cache',
+         'Connection': 'keep-alive'
+       });
+
+       const agentResults = {};
+       let sentDone = false;
+
+       for (const agentId of targetAgents) {
+         const zenBody = JSON.stringify({
+           model: agentId,
+           messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: input }],
+           stream: true
+         });
+
+         const url = new URL(`${ZEN_URL}/chat/completions`);
+         const zenReq = https.request({
+           hostname: url.hostname,
+           port: 443,
+           path: url.pathname,
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ZEN_KEY}`, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' }
+         }, (zenRes) => {
+           agentResults[agentId] = '';
+           let buffer = '';
+           zenRes.on('data', (chunk) => {
+             buffer += chunk.toString();
+             const lines = buffer.split('\n');
+             buffer = lines.pop() || '';
+             for (const line of lines) {
+               if (line.startsWith('data: ')) {
+                 const data = line.slice(6).trim();
+                 if (data === '[DONE]') continue;
+                 try {
+                   const obj = JSON.parse(data);
+                   const delta = obj.choices?.[0]?.delta?.content || '';
+                   if (delta) {
+                     agentResults[agentId] += delta;
+                     res.write(`data: ${JSON.stringify({ agent: agentId, content: delta })}\n\n`);
+                   }
+                 } catch (e) { /* skip */ }
+               }
+             }
+           });
+           zenRes.on('end', () => {
+             const allDone = Object.keys(agentResults).length === targetAgents.length;
+             if (allDone && !sentDone) {
+               sentDone = true;
+               let combined = '';
+               for (const [agent, content] of Object.entries(agentResults)) {
+                 if (content) {
+                   combined += `**${formatModelName(agent)}**: ${content}\n\n`;
+                   memory.saveMessage(sessionId, { role: 'assistant', content, model: agent, editor });
+                 }
+               }
+               res.write(`data: ${JSON.stringify({ done: true, content: combined })}\n\n`);
+               res.end();
+             }
+           });
+           zenRes.on('error', () => {
+             if (Object.keys(agentResults).length === targetAgents.length && !sentDone) {
+               sentDone = true;
+               res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+               res.end();
+             }
+           });
+         });
+
+         zenReq.on('error', () => {
+           if (Object.keys(agentResults).length === targetAgents.length && !sentDone) {
+             sentDone = true;
+             res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+             res.end();
+           }
+         });
+
+         zenReq.write(zenBody);
+         zenReq.end();
+       }
+       return;
+     } else {
+       // Non-streaming: collect all responses and return aggregated JSON
+       const results = await Promise.all(targetAgents.map(async (agentId) => {
+         return new Promise((resolve) => {
+           const zenBody = JSON.stringify({
+             model: agentId,
+             messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: input }],
+             stream: false
+           });
+
+           const url = new URL(`${ZEN_URL}/chat/completions`);
+           const zenReq = https.request({
+             hostname: url.hostname,
+             port: 443,
+             path: url.pathname,
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ZEN_KEY}`, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' }
+           }, (zenRes) => {
+             let data = '';
+             zenRes.on('data', c => data += c);
+             zenRes.on('end', () => {
+               try {
+                 const resp = JSON.parse(data);
+                 const content = resp.choices?.[0]?.message?.content || '';
+                 resolve({ agent: agentId, content, status: zenRes.statusCode });
+               } catch (e) {
+                 resolve({ agent: agentId, content: '', status: zenRes.statusCode, error: e.message });
+               }
+             });
+           });
+
+           zenReq.on('error', (err) => {
+             resolve({ agent: agentId, content: '', status: 0, error: err.message });
+           });
+
+           zenReq.write(zenBody);
+           zenReq.end();
+         });
+       }));
+
+       // Build combined response
+       let combined = '';
+       for (const result of results) {
+         if (result.content) {
+           combined += `**${formatModelName(result.agent)}**: ${result.content}\n\n`;
+           memory.saveMessage(sessionId, { role: 'assistant', content: result.content, model: result.agent, editor });
+         } else {
+           combined += `**${formatModelName(result.agent)}**: [No response - ${result.error || 'status ' + result.status}]\n\n`;
+         }
+       }
+
+       log('INFO', 'MISSION_COMPLETE', { agents: results.length, sessionId, totalLength: combined.length });
+
+       const pubId = identity.getPublicIdentity();
+       res.writeHead(200, { 'Content-Type': 'application/json' });
+       res.end(JSON.stringify({
+         content: combined,
+         agents: results.map(r => ({ agent: r.agent, name: formatModelName(r.agent), content: r.content, status: r.status })),
+         _identity: {
+           provider: pubId.name,
+           version: pubId.version,
+           owner: pubId.owner,
+           tagline: pubId.tagline
+         },
+         sessionId
+       }));
+       return;
+     }
+   }
+
+   // ─── Ollama-compatible API ──────────────────────────────────────────
+   if (req.url === '/api/chat' && req.method === 'POST') {
     const body = await readBody(req);
     let parsed;
     try {
